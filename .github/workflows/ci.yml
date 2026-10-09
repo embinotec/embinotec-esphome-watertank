@@ -54,7 +54,7 @@ jobs:
       - name: 📋 ESPHome min_version aus YAML lesen
         id: esphome_min
         run: |
-          MIN=$(grep 'min_version:' embinotec-weatherstation.yaml \
+          MIN=$(grep 'min_version:' embinotec-esphome-watertank.yaml \
             | head -1 \
             | sed 's/.*min_version:\s*//' \
             | tr -d '"'\''[:space:]')
@@ -118,7 +118,7 @@ jobs:
       - name: 📋 ESPHome min_version aus YAML lesen
         id: esphome_min
         run: |
-          MIN=$(grep 'min_version:' embinotec-weatherstation.yaml \
+          MIN=$(grep 'min_version:' embinotec-esphome-watertank.yaml \
             | head -1 \
             | sed 's/.*min_version:\s*//' \
             | tr -d '"'\''[:space:]')
@@ -164,11 +164,11 @@ jobs:
           EOF
 
       - name: 🔨 Firmware kompilieren
-        run: esphome compile embinotec-weatherstation.yaml
+        run: esphome compile embinotec-esphome-watertank.yaml
 
       - name: 📦 Firmware als Artefakt speichern
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ github.sha }}
-          path: .esphome/build/embinotec-weatherstation/.pioenvs/*/firmware.bin
+          path: .esphome/build/embinotec-esphome-watertank/.pioenvs/*/firmware.bin
           retention-days: 30
