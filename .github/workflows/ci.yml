@@ -102,7 +102,7 @@ jobs:
           EOF
 
       - name: ✅ YAML validieren
-        run: esphome config embinotec-weatherstation.yaml
+        run: esphome config embinotec-esphome-watertank.yaml
 
    
   
@@ -150,7 +150,7 @@ jobs:
           path: |
             .esphome
             ~/.platformio
-          key: esphome-build-${{ runner.os }}-${{ hashFiles('embinotec-weatherstation.yaml') }}
+          key: esphome-build-${{ runner.os }}-${{ hashFiles('embinotec-esphome-watertank.yaml') }}
           restore-keys: esphome-build-${{ runner.os }}-
 
       - name: 📝 secrets.yaml erzeugen (CI-Dummy)
