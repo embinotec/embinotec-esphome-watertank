@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      esphome_version:
+        description: "ESPHome Version (leer = latest)"
+        required: false
+        type: string
+  schedule:
+    - cron: "0 3 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  
+# -------------------------------------------------------
+  # Job: PlantUML-Diagramme in README.md einbetten
+  # -------------------------------------------------------
+  puml-markdown:
+    name: "📊 Embed PlantUML in README"
+    runs-on: ubuntu-latest        
+    needs: validate               
+    permissions:
+      contents: write             
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4 
+        with:
+          fetch-depth: 0           
+
+      - name: 📊 PlantUML in Markdown einbetten
+        uses: alessandro-marcantoni/puml-markdown@v0.1.1
+
+      - name: 💾 Geänderte README zurück committen
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update PlantUML diagrams in README [skip ci]"
+          file_pattern: "*.md"
+  
+  validate:
+    name: "✅ Validate YAML"
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 📋 ESPHome min_version aus YAML lesen
+        id: esphome_min
+        run: |
+          MIN=$(grep 'min_version:' embinotec-weatherstation.yaml \
+            | head -1 \
+            | sed 's/.*min_version:\s*//' \
+            | tr -d '"'\''[:space:]')
+          echo "min_version: $MIN"
+          echo "version=$MIN" >> $GITHUB_OUTPUT
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 📦 ESPHome installieren
+        run: |
+          if [ -n "${{ github.event.inputs.esphome_version }}" ]; then
+            TARGET="${{ github.event.inputs.esphome_version }}"
+            echo "🔧 Manuell angeforderte Version: $TARGET"
+          else
+            TARGET="esphome"   # latest
+          fi
+          pip install $TARGET
+
+      - name: 🔢 Versionscheck gegen min_version
+        run: |
+          INSTALLED=$(pip show esphome | grep ^Version | awk '{print $2}')
+          MIN="${{ steps.esphome_min.outputs.version }}"
+          echo "Installiert: $INSTALLED  |  min_version: $MIN"
+          python3 -c "
+          from packaging.version import Version
+          i = Version('$INSTALLED')
+          m = Version('$MIN')
+          if i < m:
+              print(f'❌ {i} < min_version {m}')
+              exit(1)
+          print(f'✅ {i} >= min_version {m}')
+          "
+
+      - name: 📝 secrets.yaml erzeugen (CI-Dummy)
+        run: |
+          cat > secrets.yaml << 'EOF'
+          wifi_ssid: "CI_SSID"
+          wifi_password: "CI_PASSWORD"
+          encryption_key: "dGhpcyBpcyBhIHRlc3Qga2V5IGZvciBDSSBvbmx5ISE="
+          ota_password: "CI_OTA_PASSWORD"
+          fallback_pw: "CI_FALLBACK_PW"
+          EOF
+
+      - name: ✅ YAML validieren
+        run: esphome config embinotec-weatherstation.yaml
+
+   
+  
+
+  compile:
+    name: "🔨 Compile Firmware"
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 📋 ESPHome min_version aus YAML lesen
+        id: esphome_min
+        run: |
+          MIN=$(grep 'min_version:' embinotec-weatherstation.yaml \
+            | head -1 \
+            | sed 's/.*min_version:\s*//' \
+            | tr -d '"'\''[:space:]')
+          echo "version=$MIN" >> $GITHUB_OUTPUT
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 💾 pip Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-esphome-${{ steps.esphome_min.outputs.version }}
+          restore-keys: pip-${{ runner.os }}-esphome-
+
+      - name: 📦 ESPHome installieren
+        run: |
+          if [ -n "${{ github.event.inputs.esphome_version }}" ]; then
+            pip install esphome==${{ github.event.inputs.esphome_version }}
+          else
+            pip install esphome
+          fi
+
+      - name: 💾 ESPHome Build-Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .esphome
+            ~/.platformio
+          key: esphome-build-${{ runner.os }}-${{ hashFiles('embinotec-weatherstation.yaml') }}
+          restore-keys: esphome-build-${{ runner.os }}-
+
+      - name: 📝 secrets.yaml erzeugen (CI-Dummy)
+        run: |
+          cat > secrets.yaml << 'EOF'
+          wifi_ssid: "CI_SSID"
+          wifi_password: "CI_PASSWORD"
+          encryption_key: "dGhpcyBpcyBhIHRlc3Qga2V5IGZvciBDSSBvbmx5ISE="
+          ota_password: "CI_OTA_PASSWORD"
+          fallback_pw: "CI_FALLBACK_PW"
+          EOF
+
+      - name: 🔨 Firmware kompilieren
+        run: esphome compile embinotec-weatherstation.yaml
+
+      - name: 📦 Firmware als Artefakt speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: .esphome/build/embinotec-weatherstation/.pioenvs/*/firmware.bin
+          retention-days: 30
